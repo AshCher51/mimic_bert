@@ -40,7 +40,7 @@ class MIMICDataset(Dataset):
           text,
           add_special_tokens=True,
           max_length=self.max_len,
-          return_token_type_ids=True,
+          return_token_type_ids=False,
           padding="max_length",
           truncation=True,
           return_attention_mask=True,
@@ -49,12 +49,12 @@ class MIMICDataset(Dataset):
 
         ids = tokenized_text["input_ids"].flatten().numpy()
         mask = tokenized_text["attention_mask"].flatten().numpy()
-        token_type_ids = tokenized_text["token_type_ids"].flatten().numpy()
+        # token_type_ids = tokenized_text["token_type_ids"].flatten().numpy()
 
         return {
             "ids": torch.tensor(ids, dtype=torch.long),
             "mask": torch.tensor(mask, dtype=torch.long),
-            "token_type_ids": torch.tensor(token_type_ids, dtype=torch.long),
+        #    "token_type_ids": torch.tensor(token_type_ids, dtype=torch.long),
             "target": torch.FloatTensor(labels),
         }
 
@@ -63,7 +63,8 @@ class BERTModel(nn.Module):
     def __init__(self, num_labels):
         super(BERTModel, self).__init__()
         self.bert = AutoModel.from_pretrained(
-            "emilyalsentzer/Bio_ClinicalBERT"
+            "emilyalsentzer/Bio_ClinicalBERT",
+            return_dict=True
         )
         self.dropout = nn.Dropout(0.1)
         if not args.dev:
@@ -72,8 +73,9 @@ class BERTModel(nn.Module):
         self.classifier = nn.Linear(768, num_labels)
 
     def forward(self, model_dict):
-        _, pooled_output = self.bert(model_dict['input_ids'], model_dict['attention_mask'], model_dict['token_type_ids'])
-        pooled_output = self.dropout(pooled_output.pooler_output)
+        out = self.bert(model_dict['input_ids'], model_dict['attention_mask'])#, model_dict['token_type_ids'])
+        # print(out)
+        pooled_output = self.dropout(out.pooler_output)
         if not args.dev:
             pooled_output = self.hidden(pooled_output)
         logits = self.classifier(pooled_output)
@@ -86,6 +88,7 @@ def train(model, train_dataloader, valid_dataloader, test_dataloader):
     optimizer = torch.optim.Adam(model.parameters())
     criterion = nn.BCEWithLogitsLoss()
 
+    print("start of training loop")
     for epoch in range(args.epochs):
         # Training
         model.train()
@@ -97,19 +100,19 @@ def train(model, train_dataloader, valid_dataloader, test_dataloader):
 
             ids = batch['ids'].to(device)
             mask = batch['mask'].to(device)
-            token_type_ids = batch['token_type_ids'].to(device)
+            # token_type_ids = batch['token_type_ids'].to(device)
             target = batch['target'].to(device)
-
-            logits = model(ids, mask, token_type_ids)
+            input_dict = {"input_ids":ids, "attention_mask":mask}
+            logits = model(input_dict)# token_type_ids)
             loss = criterion(logits, batch['target'])
             loss.backward()
             optimizer.step()
-            train_loss += loss.item() * train_dataloader.size(0)
+            train_loss += loss.item() * batch['ids'].size(0)
 
             # Metrics - TODO add various metrics
-            probs = torch.sigmoid(logits, dim=1).cpu().detach()
-            predicted = (probs>0.5).float()
-            actual = batch['target']
+            probs = torch.sigmoid(logits).cpu().detach()
+            predicted = (probs>0.5).float().numpy()
+            actual = batch['target'].cpu().numpy()
 
             train_acc += accuracy_score(actual, predicted)
             count += 1
@@ -124,17 +127,18 @@ def train(model, train_dataloader, valid_dataloader, test_dataloader):
         for batch in valid_dataloader:
             ids = batch['ids'].to(device)
             mask = batch['mask'].to(device)
-            token_type_ids = batch['token_type_ids'].to(device)
+            # token_type_ids = batch['token_type_ids'].to(device)
             target = batch['target'].to(device)
 
-            logits = model(ids, mask, token_type_ids)
+            input_dict = {"input_ids":ids, "attention_mask":mask}
+            logits = model(input_dict) # token_type_ids)
             loss = criterion(logits, batch['target'])
-            valid_loss += loss.item() * valid_dataloader.size(0)
+            valid_loss += loss.item() * batch['ids'].size(0)
 
             # Metrics - TODO add various metrics
-            probs = torch.sigmoid(logits, dim=1).cpu().detach()
-            predicted = (probs>0.5).float()
-            actual = batch['target']
+            probs = torch.sigmoid(logits).cpu().detach()
+            predicted = (probs>0.5).float().numpy()
+            actual = batch['target'].cpu().numpy()
 
             valid_acc += accuracy_score(actual, predicted)
             count += 1
@@ -143,6 +147,7 @@ def train(model, train_dataloader, valid_dataloader, test_dataloader):
         valid_acc /= count
 
         print(
+            "\n"*3
             f"Epoch {epoch+1}/{args.epochs}.. "
             f"Train loss: {train_loss:.3f}.. "
             f"Validation loss: {valid_loss:.3f}.."
@@ -159,17 +164,18 @@ def train(model, train_dataloader, valid_dataloader, test_dataloader):
     for batch in test_dataloader:
         ids = batch['ids'].to(device)
         mask = batch['mask'].to(device)
-        token_type_ids = batch['token_type_ids'].to(device)
+        # token_type_ids = batch['token_type_ids'].to(device)
         target = batch['target'].to(device)
 
-        logits = model(ids, mask, token_type_ids)
+        input_dict = {"input_ids":ids, "attention_mask":mask}
+        logits = model(input_dict)# token_type_ids)
         loss = criterion(logits, batch['target'])
-        test_loss += loss.item() * test_dataloader.size(0)
+        test_loss += loss.item() * batch['ids'].size(0)
 
         # Metrics - TODO add various metrics
-        probs = torch.sigmoid(logits, dim=1).cpu().detach()
-        predicted = (probs>0.5).float()
-        actual = batch['target']
+        probs = torch.sigmoid(logits).cpu().detach()
+        predicted = (probs>0.5).float().numpy()
+        actual = batch['target'].cpu().numpy()
 
         test_acc += accuracy_score(actual, predicted)
         count += 1
@@ -190,7 +196,7 @@ def main():
     df = pd.read_csv('../data/temp.csv')
     df = df.drop('Unnamed: 0', axis=1)
     if args.dev:
-        df = df.head(100)
+        df = df.head(5)
     train_df, other = train_test_split(df, test_size=0.7)
     valid_df, test_df = train_test_split(other, test_size=0.3333)
     
@@ -206,7 +212,7 @@ def main():
 
     num_labels = len(df.columns.tolist()[2:])
     net = BERTModel(num_labels)
-    
+    print("model instantiated")
     # Training!
     train(net, train_dataloader, valid_dataloader, test_dataloader)
 
