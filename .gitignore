@@ -3,3 +3,4 @@ src/.ipynb_checkpoints/*
 *.json
 .RData
 .Rhistory
+nohup.out
