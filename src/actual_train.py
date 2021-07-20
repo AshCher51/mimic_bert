@@ -39,7 +39,7 @@ class MIMICDataset(Dataset):
             text,
             add_special_tokens=True,
             max_length=self.max_len,
-            return_token_type_ids=False,
+            return_token_type_ids=True,
             padding="max_length",
             truncation=True,
             return_attention_mask=True,
@@ -48,12 +48,12 @@ class MIMICDataset(Dataset):
 
         ids = tokenized_text["input_ids"].flatten().numpy()
         mask = tokenized_text["attention_mask"].flatten().numpy()
-        # token_type_ids = tokenized_text["token_type_ids"].flatten().numpy()
+        token_type_ids = tokenized_text["token_type_ids"].flatten().numpy()
 
         return {
             "ids": torch.tensor(ids, dtype=torch.long),
             "mask": torch.tensor(mask, dtype=torch.long),
-            #    "token_type_ids": torch.tensor(token_type_ids, dtype=torch.long),
+            "token_type_ids": torch.tensor(token_type_ids, dtype=torch.long),
             "target": torch.FloatTensor(labels),
         }
 
@@ -72,8 +72,7 @@ class BERTModel(nn.Module):
 
     def forward(self, model_dict):
         out = self.bert(
-            model_dict["input_ids"], model_dict["attention_mask"]
-        )  # , model_dict['token_type_ids'])
+            model_dict["input_ids"], model_dict["attention_mask"], model_dict['token_type_ids'])
         # print(out)
         pooled_output = self.dropout(out.pooler_output)
         if not args.dev:
@@ -100,10 +99,10 @@ def train(model, train_dataloader, valid_dataloader, test_dataloader):
 
             ids = batch["ids"].to(device)
             mask = batch["mask"].to(device)
-            # token_type_ids = batch['token_type_ids'].to(device)
+            token_type_ids = batch['token_type_ids'].to(device)
             target = batch["target"].to(device)
-            input_dict = {"input_ids": ids, "attention_mask": mask}
-            logits = model(input_dict)  # token_type_ids)
+            input_dict = {"input_ids": ids, "attention_mask": mask, "token_type_ids":token_type_ids}
+            logits = model(input_dict)
             loss = criterion(logits, batch["target"])
             loss.backward()
             optimizer.step()
@@ -127,11 +126,11 @@ def train(model, train_dataloader, valid_dataloader, test_dataloader):
         for batch in valid_dataloader:
             ids = batch["ids"].to(device)
             mask = batch["mask"].to(device)
-            # token_type_ids = batch['token_type_ids'].to(device)
+            token_type_ids = batch['token_type_ids'].to(device)
             target = batch["target"].to(device)
 
-            input_dict = {"input_ids": ids, "attention_mask": mask}
-            logits = model(input_dict)  # token_type_ids)
+            input_dict = {"input_ids": ids, "attention_mask": mask, "token_type_ids":token_type_ids}
+            logits = model(input_dict)
             loss = criterion(logits, batch["target"])
             valid_loss += loss.item() * batch["ids"].size(0)
 
@@ -165,11 +164,11 @@ def train(model, train_dataloader, valid_dataloader, test_dataloader):
     for batch in test_dataloader:
         ids = batch["ids"].to(device)
         mask = batch["mask"].to(device)
-        # token_type_ids = batch['token_type_ids'].to(device)
+        token_type_ids = batch['token_type_ids'].to(device)
         target = batch["target"].to(device)
 
-        input_dict = {"input_ids": ids, "attention_mask": mask}
-        logits = model(input_dict)  # token_type_ids)
+        input_dict = {"input_ids": ids, "attention_mask": mask, "token_type_ids":token_type_ids}
+        logits = model(input_dict)
         loss = criterion(logits, batch["target"])
         test_loss += loss.item() * batch["ids"].size(0)
 
