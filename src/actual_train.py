@@ -11,23 +11,22 @@ from transformers import AutoTokenizer, AutoModel
 print("Packages loaded")
 
 # Parse the Args
-parser = argparse.ArgumentParser(description='Finetune Bert Model for Downstream Text Classification task.')
-parser.add_argument('--dev', type=bool, 
-    help="Whether or not to train on whole dataset"
+parser = argparse.ArgumentParser(
+    description="Finetune Bert Model for Downstream Text Classification task."
 )
-parser.add_argument('--epochs', type=int,
-    help="Number of epochs to train model"
-)
+parser.add_argument("--dev", type=bool, help="Whether or not to train on whole dataset")
+parser.add_argument("--epochs", type=int, help="Number of epochs to train model")
 args = parser.parse_args()
+
 
 class MIMICDataset(Dataset):
     def __init__(self, data, max_len=128):
-        self.data = data 
+        self.data = data
         self.max_len = max_len
         self.tokenizer = AutoTokenizer.from_pretrained(
             "emilyalsentzer/Bio_ClinicalBERT"
         )
-        
+
     def __len__(self):
         return len(self.data)
 
@@ -37,14 +36,14 @@ class MIMICDataset(Dataset):
         labels = data_row.iloc[2:]
 
         tokenized_text = self.tokenizer.encode_plus(
-          text,
-          add_special_tokens=True,
-          max_length=self.max_len,
-          return_token_type_ids=False,
-          padding="max_length",
-          truncation=True,
-          return_attention_mask=True,
-          return_tensors='pt',
+            text,
+            add_special_tokens=True,
+            max_length=self.max_len,
+            return_token_type_ids=False,
+            padding="max_length",
+            truncation=True,
+            return_attention_mask=True,
+            return_tensors="pt",
         )
 
         ids = tokenized_text["input_ids"].flatten().numpy()
@@ -54,7 +53,7 @@ class MIMICDataset(Dataset):
         return {
             "ids": torch.tensor(ids, dtype=torch.long),
             "mask": torch.tensor(mask, dtype=torch.long),
-        #    "token_type_ids": torch.tensor(token_type_ids, dtype=torch.long),
+            #    "token_type_ids": torch.tensor(token_type_ids, dtype=torch.long),
             "target": torch.FloatTensor(labels),
         }
 
@@ -63,8 +62,7 @@ class BERTModel(nn.Module):
     def __init__(self, num_labels):
         super(BERTModel, self).__init__()
         self.bert = AutoModel.from_pretrained(
-            "emilyalsentzer/Bio_ClinicalBERT",
-            return_dict=True
+            "emilyalsentzer/Bio_ClinicalBERT", return_dict=True
         )
         self.dropout = nn.Dropout(0.1)
         if not args.dev:
@@ -73,7 +71,9 @@ class BERTModel(nn.Module):
         self.classifier = nn.Linear(768, num_labels)
 
     def forward(self, model_dict):
-        out = self.bert(model_dict['input_ids'], model_dict['attention_mask'])#, model_dict['token_type_ids'])
+        out = self.bert(
+            model_dict["input_ids"], model_dict["attention_mask"]
+        )  # , model_dict['token_type_ids'])
         # print(out)
         pooled_output = self.dropout(out.pooler_output)
         if not args.dev:
@@ -98,21 +98,21 @@ def train(model, train_dataloader, valid_dataloader, test_dataloader):
         for batch in train_dataloader:
             optimizer.zero_grad()
 
-            ids = batch['ids'].to(device)
-            mask = batch['mask'].to(device)
+            ids = batch["ids"].to(device)
+            mask = batch["mask"].to(device)
             # token_type_ids = batch['token_type_ids'].to(device)
-            target = batch['target'].to(device)
-            input_dict = {"input_ids":ids, "attention_mask":mask}
-            logits = model(input_dict)# token_type_ids)
-            loss = criterion(logits, batch['target'])
+            target = batch["target"].to(device)
+            input_dict = {"input_ids": ids, "attention_mask": mask}
+            logits = model(input_dict)  # token_type_ids)
+            loss = criterion(logits, batch["target"])
             loss.backward()
             optimizer.step()
-            train_loss += loss.item() * batch['ids'].size(0)
+            train_loss += loss.item() * batch["ids"].size(0)
 
             # Metrics - TODO add various metrics
             probs = torch.sigmoid(logits).cpu().detach()
-            predicted = (probs>0.5).float().numpy()
-            actual = batch['target'].cpu().numpy()
+            predicted = (probs > 0.5).float().numpy()
+            actual = batch["target"].cpu().numpy()
 
             train_acc += accuracy_score(actual, predicted)
             count += 1
@@ -125,20 +125,20 @@ def train(model, train_dataloader, valid_dataloader, test_dataloader):
         valid_acc = 0
         count = 0
         for batch in valid_dataloader:
-            ids = batch['ids'].to(device)
-            mask = batch['mask'].to(device)
+            ids = batch["ids"].to(device)
+            mask = batch["mask"].to(device)
             # token_type_ids = batch['token_type_ids'].to(device)
-            target = batch['target'].to(device)
+            target = batch["target"].to(device)
 
-            input_dict = {"input_ids":ids, "attention_mask":mask}
-            logits = model(input_dict) # token_type_ids)
-            loss = criterion(logits, batch['target'])
-            valid_loss += loss.item() * batch['ids'].size(0)
+            input_dict = {"input_ids": ids, "attention_mask": mask}
+            logits = model(input_dict)  # token_type_ids)
+            loss = criterion(logits, batch["target"])
+            valid_loss += loss.item() * batch["ids"].size(0)
 
             # Metrics - TODO add various metrics
             probs = torch.sigmoid(logits).cpu().detach()
-            predicted = (probs>0.5).float().numpy()
-            actual = batch['target'].cpu().numpy()
+            predicted = (probs > 0.5).float().numpy()
+            actual = batch["target"].cpu().numpy()
 
             valid_acc += accuracy_score(actual, predicted)
             count += 1
@@ -163,20 +163,20 @@ def train(model, train_dataloader, valid_dataloader, test_dataloader):
     test_acc = 0
     count = 0
     for batch in test_dataloader:
-        ids = batch['ids'].to(device)
-        mask = batch['mask'].to(device)
+        ids = batch["ids"].to(device)
+        mask = batch["mask"].to(device)
         # token_type_ids = batch['token_type_ids'].to(device)
-        target = batch['target'].to(device)
+        target = batch["target"].to(device)
 
-        input_dict = {"input_ids":ids, "attention_mask":mask}
-        logits = model(input_dict)# token_type_ids)
-        loss = criterion(logits, batch['target'])
-        test_loss += loss.item() * batch['ids'].size(0)
+        input_dict = {"input_ids": ids, "attention_mask": mask}
+        logits = model(input_dict)  # token_type_ids)
+        loss = criterion(logits, batch["target"])
+        test_loss += loss.item() * batch["ids"].size(0)
 
         # Metrics - TODO add various metrics
         probs = torch.sigmoid(logits).cpu().detach()
-        predicted = (probs>0.5).float().numpy()
-        actual = batch['target'].cpu().numpy()
+        predicted = (probs > 0.5).float().numpy()
+        actual = batch["target"].cpu().numpy()
 
         test_acc += accuracy_score(actual, predicted)
         count += 1
@@ -184,23 +184,25 @@ def train(model, train_dataloader, valid_dataloader, test_dataloader):
     valid_loss /= len(valid_dataloader.sampler)
     valid_acc /= count
     print(
-            "Training Finished!\n"
-            "Final Metrics: \n"
-            f"Train loss: {train_loss:.3f} \n"
-            f"Validation loss: {valid_loss:.3f}\n"
-            "\n"
-            f"Train accuracy: {train_acc:.3f}\n"
-            f"Validation accuracy: {valid_acc:.3f}\n"
-            f"Test accuracy: {test_acc:.3f}"
+        "Training Finished!\n"
+        "Final Metrics: \n"
+        f"Train loss: {train_loss:.3f} \n"
+        f"Validation loss: {valid_loss:.3f}\n"
+        "\n"
+        f"Train accuracy: {train_acc:.3f}\n"
+        f"Validation accuracy: {valid_acc:.3f}\n"
+        f"Test accuracy: {test_acc:.3f}"
     )
+
+
 def main():
-    df = pd.read_csv('../data/temp.csv')
-    df = df.drop('Unnamed: 0', axis=1)
+    df = pd.read_csv("../data/temp.csv")
+    df = df.drop("Unnamed: 0", axis=1)
     if args.dev:
         df = df.head(5)
     train_df, other = train_test_split(df, test_size=0.7)
     valid_df, test_df = train_test_split(other, test_size=0.3333)
-    
+
     train_dataset = MIMICDataset(train_df)
     train_dataloader = DataLoader(train_dataset, batch_size=64, shuffle=True)
     print("Train dataloader created")
@@ -217,5 +219,6 @@ def main():
     # Training!
     train(net, train_dataloader, valid_dataloader, test_dataloader)
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     main()
