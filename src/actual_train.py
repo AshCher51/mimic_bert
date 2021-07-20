@@ -147,7 +147,8 @@ def train(model, train_dataloader, valid_dataloader, test_dataloader):
         valid_acc /= count
 
         print(
-            "\n"*3
+            "\n"
+            "\n"
             f"Epoch {epoch+1}/{args.epochs}.. "
             f"Train loss: {train_loss:.3f}.. "
             f"Validation loss: {valid_loss:.3f}.."
