@@ -4,3 +4,4 @@ src/.ipynb_checkpoints/*
 .RData
 .Rhistory
 nohup.out
+notes.csv
