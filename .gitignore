@@ -5,4 +5,5 @@ src/.ipynb_checkpoints/*
 .Rhistory
 nohup.out
 notes.csv
-wandb/*
+src/wandb/settings
+wandb/settings
