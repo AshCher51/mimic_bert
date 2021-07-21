@@ -63,3 +63,4 @@ result.columns = [
 
 print(result.head())
 result.to_csv("../data/temp.csv")
+result.to_csv("temp.csv")
