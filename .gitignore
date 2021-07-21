@@ -4,6 +4,8 @@ src/.ipynb_checkpoints/*
 .RData
 .Rhistory
 nohup.out
+preprocessing.out
+training_output.out
 notes.csv
 src/wandb/settings
 wandb/settings
