@@ -99,6 +99,7 @@ def train(model, train_dataloader, valid_dataloader, test_dataloader):
         model.train()
         train_loss = 0
         train_acc = 0
+        train_f1_macro = 0
         count = 0
         for batch in train_dataloader:
             optimizer.zero_grad()
@@ -121,6 +122,8 @@ def train(model, train_dataloader, valid_dataloader, test_dataloader):
             actual = target.cpu().numpy()
 
             train_acc += accuracy_score(actual, predicted)
+            train_f1_macro += f1_score(actual, predicted, average='macro')
+            train_f1_micro += f1_score(actual, predicted, average='micro')
             count += 1
         train_loss /= len(train_dataloader.sampler)
         train_acc /= count
