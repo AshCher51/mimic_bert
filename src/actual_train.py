@@ -1,4 +1,5 @@
 import argparse
+from rich.progress import track
 import pandas as pd
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score
@@ -6,7 +7,7 @@ from sklearn.metrics import accuracy_score
 import torch
 import torch.nn as nn
 from torch.utils.data import Dataset, DataLoader
-from transformers import AutoTokenizer, AutoModel
+from transformers import AutoTokenizer, AutoModel, AdamW, get_linear_schedule_with_warmup
 
 print("Packages loaded")
 
@@ -64,7 +65,7 @@ class BERTModel(nn.Module):
         self.bert = AutoModel.from_pretrained(
             "emilyalsentzer/Bio_ClinicalBERT", return_dict=True
         )
-        self.dropout = nn.Dropout(0.1)
+        self.dropout = nn.Dropout(0.3)
         if not args.dev:
             self.hidden = nn.Linear(768, 64)
             self.classifier = nn.Linear(64, num_labels)
@@ -77,6 +78,7 @@ class BERTModel(nn.Module):
         pooled_output = self.dropout(out.pooler_output)
         if not args.dev:
             pooled_output = self.hidden(pooled_output)
+            pooled_output =self.dropout(pooled_output)
         logits = self.classifier(pooled_output)
         return logits
 
@@ -84,11 +86,15 @@ class BERTModel(nn.Module):
 def train(model, train_dataloader, valid_dataloader, test_dataloader):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model.to(device)
-    optimizer = torch.optim.Adam(model.parameters())
+    optimizer = AdamW(model.parameters(), lr=0.001)
     criterion = nn.BCEWithLogitsLoss()
+    scheduler = get_linear_schedule_with_warmup(
+        optimizer, num_warmup_steps= 0,
+        num_training_steps=args.epochs * len(train_dataloader)
+    )
 
     print("start of training loop")
-    for epoch in range(args.epochs):
+    for epoch in track(range(args.epochs)):
         # Training
         model.train()
         train_loss = 0
@@ -106,12 +112,13 @@ def train(model, train_dataloader, valid_dataloader, test_dataloader):
             loss = criterion(logits, batch["target"])
             loss.backward()
             optimizer.step()
+            scheduler.step()
             train_loss += loss.item() * batch["ids"].size(0)
 
             # Metrics - TODO add various metrics
             probs = torch.sigmoid(logits).cpu().detach()
             predicted = (probs > 0.5).float().numpy()
-            actual = batch["target"].cpu().numpy()
+            actual = target.cpu().numpy()
 
             train_acc += accuracy_score(actual, predicted)
             count += 1
@@ -137,7 +144,7 @@ def train(model, train_dataloader, valid_dataloader, test_dataloader):
             # Metrics - TODO add various metrics
             probs = torch.sigmoid(logits).cpu().detach()
             predicted = (probs > 0.5).float().numpy()
-            actual = batch["target"].cpu().numpy()
+            actual = target.cpu().numpy()
 
             valid_acc += accuracy_score(actual, predicted)
             count += 1
@@ -175,7 +182,7 @@ def train(model, train_dataloader, valid_dataloader, test_dataloader):
         # Metrics - TODO add various metrics
         probs = torch.sigmoid(logits).cpu().detach()
         predicted = (probs > 0.5).float().numpy()
-        actual = batch["target"].cpu().numpy()
+        actual = target.cpu().numpy()
 
         test_acc += accuracy_score(actual, predicted)
         count += 1
