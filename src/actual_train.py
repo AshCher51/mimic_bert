@@ -1,8 +1,9 @@
 import argparse
-from rich.progress import track
 import pandas as pd
+from rich.progress import track
+import wandb
 from sklearn.model_selection import train_test_split
-from sklearn.metrics import accuracy_score
+from sklearn.metrics import accuracy_score, f1_score, roc_auc_score
 
 import torch
 import torch.nn as nn
@@ -83,7 +84,7 @@ class BERTModel(nn.Module):
         return logits
 
 
-def train(model, train_dataloader, valid_dataloader, test_dataloader):
+def train(model, train_dataloader, valid_dataloader, test_dataloader, labels):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model.to(device)
     optimizer = AdamW(model.parameters(), lr=0.001)
@@ -100,6 +101,7 @@ def train(model, train_dataloader, valid_dataloader, test_dataloader):
         train_loss = 0
         train_acc = 0
         train_f1_macro = 0
+        train_f1_micro = 0
         count = 0
         for batch in train_dataloader:
             optimizer.zero_grad()
@@ -115,6 +117,7 @@ def train(model, train_dataloader, valid_dataloader, test_dataloader):
             optimizer.step()
             scheduler.step()
             train_loss += loss.item() * batch["ids"].size(0)
+            wandb.log({"train_loss": loss})
 
             # Metrics - TODO add various metrics
             probs = torch.sigmoid(logits).cpu().detach()
@@ -124,14 +127,21 @@ def train(model, train_dataloader, valid_dataloader, test_dataloader):
             train_acc += accuracy_score(actual, predicted)
             train_f1_macro += f1_score(actual, predicted, average='macro')
             train_f1_micro += f1_score(actual, predicted, average='micro')
+            wandb.log({{"train_acc": accuracy_score(actual, predicted), 
+                        "train_f1_macro": f1_score(actual, predicted, average='macro'),
+                        "train_f1_micro": f1_score(actual, predicted, average='micro')}})
             count += 1
         train_loss /= len(train_dataloader.sampler)
         train_acc /= count
+        train_f1_macro /= count
+        train_f1_micro /= count
 
         # Validation
         model.eval()
         valid_loss = 0
         valid_acc = 0
+        valid_f1_macro = 0
+        valid_f1_micro = 0
         count = 0
         for batch in valid_dataloader:
             ids = batch["ids"].to(device)
@@ -143,6 +153,7 @@ def train(model, train_dataloader, valid_dataloader, test_dataloader):
             logits = model(input_dict)
             loss = criterion(logits, batch["target"])
             valid_loss += loss.item() * batch["ids"].size(0)
+            wandb.log({"valid_loss": loss})
 
             # Metrics - TODO add various metrics
             probs = torch.sigmoid(logits).cpu().detach()
@@ -150,10 +161,17 @@ def train(model, train_dataloader, valid_dataloader, test_dataloader):
             actual = target.cpu().numpy()
 
             valid_acc += accuracy_score(actual, predicted)
+            valid_f1_macro += f1_score(actual, predicted, average="macro")
+            valid_f1_micro += f1_score(actual, predicted, average="micro")
+            wandb.log({{"valid_acc": accuracy_score(actual, predicted), 
+                        "valid_f1_macro": f1_score(actual, predicted, average='macro'),
+                        "valid_f1_micro": f1_score(actual, predicted, average='micro')}})
             count += 1
 
         valid_loss /= len(valid_dataloader.sampler)
         valid_acc /= count
+        valid_f1_macro /= count
+        valid_f1_micro /= count
 
         print(
             "\n"
@@ -164,12 +182,17 @@ def train(model, train_dataloader, valid_dataloader, test_dataloader):
             "\n"
             f"Train accuracy: {train_acc:.3f}"
             f"Validation accuracy: {valid_acc:.3f}"
+            "\n"
+            f"Train F1 Scores: macro - {train_f1_macro:.3f} micro - {train_f1_micro:.3f}\n"
+            f"Valid F1 Scores: macro - {valid_f1_macro:.3f} micro - {valid_f1_micro:.3f}\n"
         )
 
     # Testing
     model.eval()
     test_loss = 0
     test_acc = 0
+    test_f1_macro = 0
+    test_f1_micro = 0
     count = 0
     for batch in test_dataloader:
         ids = batch["ids"].to(device)
@@ -179,8 +202,6 @@ def train(model, train_dataloader, valid_dataloader, test_dataloader):
 
         input_dict = {"input_ids": ids, "attention_mask": mask, "token_type_ids":token_type_ids}
         logits = model(input_dict)
-        loss = criterion(logits, batch["target"])
-        test_loss += loss.item() * batch["ids"].size(0)
 
         # Metrics - TODO add various metrics
         probs = torch.sigmoid(logits).cpu().detach()
@@ -188,10 +209,36 @@ def train(model, train_dataloader, valid_dataloader, test_dataloader):
         actual = target.cpu().numpy()
 
         test_acc += accuracy_score(actual, predicted)
+        test_f1_macro += f1_score(actual, predicted, average="macro")
+        test_f1_micro += f1_score(actual, predicted, average="micro")
         count += 1
 
-    valid_loss /= len(valid_dataloader.sampler)
-    valid_acc /= count
+    test_acc /= count
+    test_f1_macro /= count
+    test_f1_micro /= count
+
+    test_roc_auc_macro = roc_auc_score(actual, predicted, average="macro")
+    test_roc_auc_micro = roc_auc_score(actual, predicted, average="micro")
+
+    test_roc_auc = roc_auc_score(actual, predicted, average=None, labels=labels)
+
+    wandb.log({{"test_acc": test_acc, 
+                "test_f1_macro": test_f1_macro,
+                "test_f1_micro": test_f1_micro,
+                "test_roc_auc_macro": test_roc_auc_macro,
+                "test_roc_auc_micro": test_roc_auc_micro,
+                "test_roc_auc_by_class": test_roc_auc, }})
+
+    wandb.log({"roc_curve" : wandb.plot.roc_curve(actual,
+           predicted, labels=labels)})
+
+    wandb.log({"conf_mat" : wandb.plot.confusion_matrix(
+                        y_true=actual,
+                        preds=predicted,
+                        class_names=labels)})
+
+
+
     print(
         "Training Finished!\n"
         "Final Metrics: \n"
@@ -201,10 +248,21 @@ def train(model, train_dataloader, valid_dataloader, test_dataloader):
         f"Train accuracy: {train_acc:.3f}\n"
         f"Validation accuracy: {valid_acc:.3f}\n"
         f"Test accuracy: {test_acc:.3f}"
+        "\n"
+        f"Train F1 Scores: macro - {train_f1_macro:.3f} micro - {train_f1_micro:.3f}\n"
+        f"Valid F1 Scores: macro - {valid_f1_macro:.3f} micro - {train_f1_micro:.3f}\n"
+        f"Test  F1 Scores: macro - {test_f1_macro:.3f}  micro - {test_f1_micro:.3f}\n"
+        "\n"
+        f"Test Macro AUC: {test_roc_auc_macro:.3f}\n"
+        f"Test Micro AUC: {test_roc_auc_micro:.3f}\n"
+        "\n"
+        f"Test AUC Breakdown By Class: {test_roc_auc}\n"
+
     )
 
 
 def main():
+    wandb.init(project="mimic_bert")
     df = pd.read_csv("../data/temp.csv")
     df = df.drop("Unnamed: 0", axis=1)
     if args.dev:
@@ -226,7 +284,7 @@ def main():
     net = BERTModel(num_labels)
     print("model instantiated")
     # Training!
-    train(net, train_dataloader, valid_dataloader, test_dataloader)
+    train(net, train_dataloader, valid_dataloader, test_dataloader, df.columns.tolist()[2:])
 
 
 if __name__ == "__main__":
