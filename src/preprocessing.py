@@ -61,6 +61,6 @@ result.columns = [
     "UNSURE",
 ]
 
-print(result.head())
+print(result)
 result.to_csv("../data/temp.csv")
 result.to_csv("temp.csv")

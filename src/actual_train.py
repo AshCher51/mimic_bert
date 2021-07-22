@@ -8,7 +8,12 @@ from sklearn.metrics import accuracy_score, f1_score, roc_auc_score
 import torch
 import torch.nn as nn
 from torch.utils.data import Dataset, DataLoader
-from transformers import AutoTokenizer, AutoModel, AdamW, get_linear_schedule_with_warmup
+from transformers import (
+    AutoTokenizer,
+    AutoModel,
+    AdamW,
+    get_linear_schedule_with_warmup,
+)
 
 print("Packages loaded")
 
@@ -74,12 +79,15 @@ class BERTModel(nn.Module):
 
     def forward(self, model_dict):
         out = self.bert(
-            model_dict["input_ids"], model_dict["attention_mask"], model_dict['token_type_ids'])
+            model_dict["input_ids"],
+            model_dict["attention_mask"],
+            model_dict["token_type_ids"],
+        )
         # print(out)
         pooled_output = self.dropout(out.pooler_output)
         if not args.dev:
             pooled_output = self.hidden(pooled_output)
-            pooled_output =self.dropout(pooled_output)
+            pooled_output = self.dropout(pooled_output)
         logits = self.classifier(pooled_output)
         return logits
 
@@ -90,8 +98,9 @@ def train(model, train_dataloader, valid_dataloader, test_dataloader, labels):
     optimizer = AdamW(model.parameters(), lr=0.001)
     criterion = nn.BCEWithLogitsLoss()
     scheduler = get_linear_schedule_with_warmup(
-        optimizer, num_warmup_steps= 0,
-        num_training_steps=args.epochs * len(train_dataloader)
+        optimizer,
+        num_warmup_steps=0,
+        num_training_steps=args.epochs * len(train_dataloader),
     )
 
     print("start of training loop")
@@ -108,9 +117,13 @@ def train(model, train_dataloader, valid_dataloader, test_dataloader, labels):
 
             ids = batch["ids"].to(device)
             mask = batch["mask"].to(device)
-            token_type_ids = batch['token_type_ids'].to(device)
+            token_type_ids = batch["token_type_ids"].to(device)
             target = batch["target"].to(device)
-            input_dict = {"input_ids": ids, "attention_mask": mask, "token_type_ids":token_type_ids}
+            input_dict = {
+                "input_ids": ids,
+                "attention_mask": mask,
+                "token_type_ids": token_type_ids,
+            }
             logits = model(input_dict)
             loss = criterion(logits, batch["target"])
             loss.backward()
@@ -125,11 +138,17 @@ def train(model, train_dataloader, valid_dataloader, test_dataloader, labels):
             actual = target.cpu().numpy()
 
             train_acc += accuracy_score(actual, predicted)
-            train_f1_macro += f1_score(actual, predicted, average='macro')
-            train_f1_micro += f1_score(actual, predicted, average='micro')
-            wandb.log({{"train_acc": accuracy_score(actual, predicted), 
-                        "train_f1_macro": f1_score(actual, predicted, average='macro'),
-                        "train_f1_micro": f1_score(actual, predicted, average='micro')}})
+            train_f1_macro += f1_score(actual, predicted, average="macro")
+            train_f1_micro += f1_score(actual, predicted, average="micro")
+            wandb.log(
+                {
+                    {
+                        "train_acc": accuracy_score(actual, predicted),
+                        "train_f1_macro": f1_score(actual, predicted, average="macro"),
+                        "train_f1_micro": f1_score(actual, predicted, average="micro"),
+                    }
+                }
+            )
             count += 1
         train_loss /= len(train_dataloader.sampler)
         train_acc /= count
@@ -146,10 +165,14 @@ def train(model, train_dataloader, valid_dataloader, test_dataloader, labels):
         for batch in valid_dataloader:
             ids = batch["ids"].to(device)
             mask = batch["mask"].to(device)
-            token_type_ids = batch['token_type_ids'].to(device)
+            token_type_ids = batch["token_type_ids"].to(device)
             target = batch["target"].to(device)
 
-            input_dict = {"input_ids": ids, "attention_mask": mask, "token_type_ids":token_type_ids}
+            input_dict = {
+                "input_ids": ids,
+                "attention_mask": mask,
+                "token_type_ids": token_type_ids,
+            }
             logits = model(input_dict)
             loss = criterion(logits, batch["target"])
             valid_loss += loss.item() * batch["ids"].size(0)
@@ -163,9 +186,15 @@ def train(model, train_dataloader, valid_dataloader, test_dataloader, labels):
             valid_acc += accuracy_score(actual, predicted)
             valid_f1_macro += f1_score(actual, predicted, average="macro")
             valid_f1_micro += f1_score(actual, predicted, average="micro")
-            wandb.log({{"valid_acc": accuracy_score(actual, predicted), 
-                        "valid_f1_macro": f1_score(actual, predicted, average='macro'),
-                        "valid_f1_micro": f1_score(actual, predicted, average='micro')}})
+            wandb.log(
+                {
+                    {
+                        "valid_acc": accuracy_score(actual, predicted),
+                        "valid_f1_macro": f1_score(actual, predicted, average="macro"),
+                        "valid_f1_micro": f1_score(actual, predicted, average="micro"),
+                    }
+                }
+            )
             count += 1
 
         valid_loss /= len(valid_dataloader.sampler)
@@ -197,10 +226,14 @@ def train(model, train_dataloader, valid_dataloader, test_dataloader, labels):
     for batch in test_dataloader:
         ids = batch["ids"].to(device)
         mask = batch["mask"].to(device)
-        token_type_ids = batch['token_type_ids'].to(device)
+        token_type_ids = batch["token_type_ids"].to(device)
         target = batch["target"].to(device)
 
-        input_dict = {"input_ids": ids, "attention_mask": mask, "token_type_ids":token_type_ids}
+        input_dict = {
+            "input_ids": ids,
+            "attention_mask": mask,
+            "token_type_ids": token_type_ids,
+        }
         logits = model(input_dict)
 
         # Metrics - TODO add various metrics
@@ -222,22 +255,28 @@ def train(model, train_dataloader, valid_dataloader, test_dataloader, labels):
 
     test_roc_auc = roc_auc_score(actual, predicted, average=None, labels=labels)
 
-    wandb.log({{"test_acc": test_acc, 
+    wandb.log(
+        {
+            {
+                "test_acc": test_acc,
                 "test_f1_macro": test_f1_macro,
                 "test_f1_micro": test_f1_micro,
                 "test_roc_auc_macro": test_roc_auc_macro,
                 "test_roc_auc_micro": test_roc_auc_micro,
-                "test_roc_auc_by_class": test_roc_auc, }})
+                "test_roc_auc_by_class": test_roc_auc,
+            }
+        }
+    )
 
-    wandb.log({"roc_curve" : wandb.plot.roc_curve(actual,
-           predicted, labels=labels)})
+    wandb.log({"roc_curve": wandb.plot.roc_curve(actual, predicted, labels=labels)})
 
-    wandb.log({"conf_mat" : wandb.plot.confusion_matrix(
-                        y_true=actual,
-                        preds=predicted,
-                        class_names=labels)})
-
-
+    wandb.log(
+        {
+            "conf_mat": wandb.plot.confusion_matrix(
+                y_true=actual, preds=predicted, class_names=labels
+            )
+        }
+    )
 
     print(
         "Training Finished!\n"
@@ -257,7 +296,6 @@ def train(model, train_dataloader, valid_dataloader, test_dataloader, labels):
         f"Test Micro AUC: {test_roc_auc_micro:.3f}\n"
         "\n"
         f"Test AUC Breakdown By Class: {test_roc_auc}\n"
-
     )
 
 
@@ -284,7 +322,13 @@ def main():
     net = BERTModel(num_labels)
     print("model instantiated")
     # Training!
-    train(net, train_dataloader, valid_dataloader, test_dataloader, df.columns.tolist()[2:])
+    train(
+        net,
+        train_dataloader,
+        valid_dataloader,
+        test_dataloader,
+        df.columns.tolist()[2:],
+    )
 
 
 if __name__ == "__main__":
